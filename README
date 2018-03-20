@@ -1,6 +1,35 @@
-/* step 1 get disk info */
-/* step 2 generate fix pattern test file */
-/* step 3 read and save original data */
-/* step 4 write fix pattern to disk */
-/* step 5 read again and check */
-/* step 6 restore original data to disk */
+repackage 'dd' to test fake disk.
+
+compile:
+        ./bootstrap
+        ./configure
+        make
+
+usage:
+        sudo ./src/dd -d /dev/fakedisk-want-to-test -s the-Nth-sector-under-test
+
+NOTES:
+        the called 'fake disk' is that the real capacity of the disk
+        is smaller than the labled capacity. Nowadays, the fakedisk always
+        exist in the form of U-Disk/TF Card/SD Card/SSD.
+
+        there is two method to make a fakedisk:
+        1) just change alike 'S.M.A.R.T info' of the disk which is reported to
+           the host by the disk firmware.
+        2) except method 1 , also change the firmware of the disk to support
+           the out of capacity read/write from the host.
+
+        In case 1, to test the fake disk , just write-read test of the last sector
+        is OK. In case 2, you must write-read test sequitially form the 0th sector
+        to the last sector. fot the right disk, th test method of case 2 will reduce
+        the disk life!
+
+        below is the single sector test method, the test the whole disk, your just
+        need write a loop to call the function dd_main().
+
+        step 1 get disk info  /* find the total sector count exhibited by the disk */
+        step 2 generate fix pattern test file
+        step 3 read and save original data
+        step 4 write fix pattern to disk
+        step 5 read again and check
+        step 6 restore original data to disk

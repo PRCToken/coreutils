@@ -41,12 +41,12 @@
 #define  USE_STD_DD 0
 /* The official name of this program (e.g., no 'g' prefix).  */
 #define PROGRAM_NAME "dd"
-
-#define AUTHORS \
+#if USE_STD_DD
+#efine AUTHORS \
   proper_name ("Paul Rubin"), \
   proper_name ("David MacKenzie"), \
   proper_name ("Stuart Kemp")
-
+#endif
 static struct option const long_options[] =
 {
   {NULL, 0, NULL, 0}
@@ -96,7 +96,9 @@ static struct option const long_options[] =
   while (0)
 
 /* Default input and output blocksize. */
+#if USE_STD_DD
 #define DEFAULT_BLOCKSIZE 512
+#endif
 
 /* How many bytes to add to the input and output block sizes before invoking
    malloc.  See dd_copy for details.  INPUT_BLOCK_SLOP must be no less than
@@ -109,8 +111,9 @@ static struct option const long_options[] =
    allocate buffers that size.  Keep it smaller than SSIZE_MAX, for
    the benefit of system calls like "read".  And keep it smaller than
    OFF_T_MAX, for the benefit of the large-offset seek code.  */
+#if USE_STD_DD
 #define MAX_BLOCKSIZE(slop) MIN (SIZE_MAX - (slop), MIN (SSIZE_MAX, OFF_T_MAX))
-
+#endif
 /* Conversions bit masks. */
 enum
   {
@@ -527,6 +530,7 @@ static bool close_stdout_required = true;
    call, once parse_long_options has succeeded.
    Meanwhile, we guarantee that the standard error stream is flushed,
    by inlining the last half of close_stdout as needed.  */
+#if USE_STD_DD
 static void
 maybe_close_stdout (void)
 {
@@ -535,6 +539,7 @@ maybe_close_stdout (void)
   else if (close_stream (stderr) != 0)
     _exit (EXIT_FAILURE);
 }
+#endif
 
 /* Like error() but handle any pending newline.  */
 
@@ -748,6 +753,7 @@ alloc_obuf (void)
     }
 }
 
+#if USE_STD_DD
 static void
 translate_charset (char const *new_trans)
 {
@@ -755,7 +761,7 @@ translate_charset (char const *new_trans)
     trans_table[i] = new_trans[trans_table[i]];
   translation_needed = true;
 }
-
+#endif
 /* Return true if I has more than one bit set.  I must be nonnegative.  */
 
 static inline bool
@@ -851,6 +857,7 @@ print_xfer_stats (xtime_t progress_time)
 static void
 print_stats (void)
 {
+#if USE_STD_DD
   if (status_level == STATUS_NONE)
     return;
 
@@ -876,6 +883,7 @@ print_stats (void)
     return;
 
   print_xfer_stats (0);
+#endif
 }
 
 /* An ordinary signal was received; arrange for the program to exit.  */
@@ -1602,128 +1610,8 @@ scanargs (int argc, char *const *argv)
       output_flags &= ~O_NOCACHE;
     }
 }
-#endif
 
-void fake_opt(const char* infile, const char* outfile, int skip_count, int seek_count, int bs)
-{
-  size_t blocksize = 0;
-  uintmax_t count = (uintmax_t) -1;
-  uintmax_t skip = 0;
-  uintmax_t seek = 0;
-
-  input_file = infile;
-  output_file = outfile;
-  blocksize = bs;
-  skip = skip_count;
-  seek = seek_count;
-  count = 1;
-
-
-  if (blocksize)
-    input_blocksize = output_blocksize = blocksize;
-  else
-    {
-      /* POSIX says dd aggregates partial reads into
-         output_blocksize if bs= is not specified.  */
-      conversions_mask |= C_TWOBUFS;
-    }
-
-  if (input_blocksize == 0)
-    input_blocksize = DEFAULT_BLOCKSIZE;
-  if (output_blocksize == 0)
-    output_blocksize = DEFAULT_BLOCKSIZE;
-  if (conversion_blocksize == 0)
-    conversions_mask &= ~(C_BLOCK | C_UNBLOCK);
-
-  if (input_flags & (O_DSYNC | O_SYNC))
-    input_flags |= O_RSYNC;
-
-  if (output_flags & O_FULLBLOCK)
-    {
-      error (0, 0, "%s: %s", _("invalid output flag"), quote ("fullblock"));
-      usage (EXIT_FAILURE);
-    }
-
-  if (input_flags & O_SEEK_BYTES)
-    {
-      error (0, 0, "%s: %s", _("invalid input flag"), quote ("seek_bytes"));
-      usage (EXIT_FAILURE);
-    }
-
-  if (output_flags & (O_COUNT_BYTES | O_SKIP_BYTES))
-    {
-      error (0, 0, "%s: %s", _("invalid output flag"),
-             quote (output_flags & O_COUNT_BYTES
-                    ? "count_bytes" : "skip_bytes"));
-      usage (EXIT_FAILURE);
-    }
-
-  if (input_flags & O_SKIP_BYTES && skip != 0)
-    {
-      skip_records = skip / input_blocksize;
-      skip_bytes = skip % input_blocksize;
-    }
-  else if (skip != 0)
-    skip_records = skip;
-
-  if (input_flags & O_COUNT_BYTES && count != (uintmax_t) -1)
-    {
-      max_records = count / input_blocksize;
-      max_bytes = count % input_blocksize;
-    }
-  else if (count != (uintmax_t) -1)
-    max_records = count;
-
-  if (output_flags & O_SEEK_BYTES && seek != 0)
-    {
-      seek_records = seek / output_blocksize;
-      seek_bytes = seek % output_blocksize;
-    }
-  else if (seek != 0)
-    seek_records = seek;
-
-  /* Warn about partial reads if bs=SIZE is given and iflag=fullblock
-     is not, and if counting or skipping bytes or using direct I/O.
-     This helps to avoid confusion with miscounts, and to avoid issues
-     with direct I/O on GNU/Linux.  */
-  warn_partial_read =
-    (! (conversions_mask & C_TWOBUFS) && ! (input_flags & O_FULLBLOCK)
-     && (skip_records
-         || (0 < max_records && max_records < (uintmax_t) -1)
-         || (input_flags | output_flags) & O_DIRECT));
-
-  iread_fnc = ((input_flags & O_FULLBLOCK)
-               ? iread_fullblock
-               : iread);
-  input_flags &= ~O_FULLBLOCK;
-
-  if (multiple_bits_set (conversions_mask & (C_ASCII | C_EBCDIC | C_IBM)))
-    die (EXIT_FAILURE, 0, _("cannot combine any two of {ascii,ebcdic,ibm}"));
-  if (multiple_bits_set (conversions_mask & (C_BLOCK | C_UNBLOCK)))
-    die (EXIT_FAILURE, 0, _("cannot combine block and unblock"));
-  if (multiple_bits_set (conversions_mask & (C_LCASE | C_UCASE)))
-    die (EXIT_FAILURE, 0, _("cannot combine lcase and ucase"));
-  if (multiple_bits_set (conversions_mask & (C_EXCL | C_NOCREAT)))
-    die (EXIT_FAILURE, 0, _("cannot combine excl and nocreat"));
-  if (multiple_bits_set (input_flags & (O_DIRECT | O_NOCACHE))
-      || multiple_bits_set (output_flags & (O_DIRECT | O_NOCACHE)))
-    die (EXIT_FAILURE, 0, _("cannot combine direct and nocache"));
-
-  if (input_flags & O_NOCACHE)
-    {
-      i_nocache = true;
-      i_nocache_eof = (max_records == 0 && max_bytes == 0);
-      input_flags &= ~O_NOCACHE;
-    }
-  if (output_flags & O_NOCACHE)
-    {
-      o_nocache = true;
-      o_nocache_eof = (max_records == 0 && max_bytes == 0);
-      output_flags &= ~O_NOCACHE;
-    }
-}
 /* Fix up translation table. */
-
 static void
 apply_translations (void)
 {
@@ -1759,6 +1647,7 @@ apply_translations (void)
     }
 }
 
+#endif
 /* Apply the character-set translations specified by the user
    to the NREAD bytes in BUF.  */
 
@@ -2139,6 +2028,7 @@ copy_with_unblock (char const *buf, size_t nread)
 /* Set the file descriptor flags for FD that correspond to the nonzero bits
    in ADD_FLAGS.  The file's name is NAME.  */
 
+#if USE_STD_DD
 static void
 set_fd_flags (int fd, int add_flags, char const *name)
 {
@@ -2183,6 +2073,7 @@ set_fd_flags (int fd, int add_flags, char const *name)
         die (EXIT_FAILURE, errno, _("setting flags for %s"), quoteaf (name));
     }
 }
+#endif
 
 /* The main loop.  */
 
@@ -2230,11 +2121,11 @@ dd_copy (void)
              1. file is too small
              2. pipe has not enough data
              3. partial reads  */
-      if ((us_blocks || (!input_offset_overflow && us_bytes))
-          && status_level != STATUS_NONE)
+      if ((us_blocks || (!input_offset_overflow && us_bytes)))
+          /* && status_level != STATUS_NONE) */
         {
           error (0, 0,
-                 _("%s: cannot skip to specified offset"), quotef (input_file));
+                 _("%s: XX cannot skip to specified offset"), quotef (input_file));
         }
     }
 
@@ -2507,7 +2398,7 @@ main (int argc, char **argv)
   install_signal_handlers ();
 
   initialize_main (&argc, &argv);
-  /* set_program_name (argv[0]); */
+  set_program_name (argv[0]);
   setlocale (LC_ALL, "");
   bindtextdomain (PACKAGE, LOCALEDIR);
   textdomain (PACKAGE);
@@ -2644,152 +2535,226 @@ main (int argc, char **argv)
 }
 #endif
 
-
+#if (!USE_STD_DD)
 int
-org_main (const char* infile, const char* outfile, int skip, int seek, int bs)
+dd_main (const char* infile, const char* outfile, int skip, int seek, int bs)
 {
-  int i;
-  int exit_status;
-  off_t offset;
+        int exit_status;
+        off_t offset;
+        int count = 1;  /* TODO: just fixed to 1 */
 
-  install_signal_handlers ();
+        install_signal_handlers ();
+        page_size = getpagesize ();
+        close_stdout_required = false;
 
-  /* initialize_main (&argc, &argv); */
-  /* set_program_name (argv[0]); */
-  setlocale (LC_ALL, "");
-  bindtextdomain (PACKAGE, LOCALEDIR);
-  textdomain (PACKAGE);
-
-  /* Arrange to close stdout if parse_long_options exits.  */
-  atexit (maybe_close_stdout);
-
-  page_size = getpagesize ();
-
-  /* parse_long_options (argc, argv, PROGRAM_NAME, PACKAGE, Version, */
-  /*                     usage, AUTHORS, (char const *) NULL); */
-  close_stdout_required = false;
-
-  /* if (getopt_long (argc, argv, "", long_options, NULL) != -1) */
-  /*   usage (EXIT_FAILURE); */
-
-  /* Initialize translation table to identity translation. */
-  for (i = 0; i < 256; i++)
-    trans_table[i] = i;
-
-  /* Decode arguments. */
-  /* scanargs (argc, argv); */
-  fake_opt(infile, outfile, skip, seek, bs);
-
-  apply_translations ();
-
-  if (input_file == NULL)
-    {
-      input_file = _("standard input");
-      set_fd_flags (STDIN_FILENO, input_flags, input_file);
-    }
-  else
-    {
-      if (ifd_reopen (STDIN_FILENO, input_file, O_RDONLY | input_flags, 0) < 0)
-        die (EXIT_FAILURE, errno, _("failed to open %s"),
-             quoteaf (input_file));
-    }
-
-  offset = lseek (STDIN_FILENO, 0, SEEK_CUR);
-  input_seekable = (0 <= offset);
-  input_offset = MAX (0, offset);
-  input_seek_errno = errno;
-
-  if (output_file == NULL)
-    {
-      output_file = _("standard output");
-      set_fd_flags (STDOUT_FILENO, output_flags, output_file);
-    }
-  else
-    {
-      mode_t perms = MODE_RW_UGO;
-      int opts
-        = (output_flags
-           | (conversions_mask & C_NOCREAT ? 0 : O_CREAT)
-           | (conversions_mask & C_EXCL ? O_EXCL : 0)
-           | (seek_records || (conversions_mask & C_NOTRUNC) ? 0 : O_TRUNC));
-
-      /* Open the output file with *read* access only if we might
-         need to read to satisfy a 'seek=' request.  If we can't read
-         the file, go ahead with write-only access; it might work.  */
-      if ((! seek_records
-           || ifd_reopen (STDOUT_FILENO, output_file, O_RDWR | opts, perms) < 0)
-          && (ifd_reopen (STDOUT_FILENO, output_file, O_WRONLY | opts, perms)
-              < 0))
-        die (EXIT_FAILURE, errno, _("failed to open %s"),
-             quoteaf (output_file));
-
-      if (seek_records != 0 && !(conversions_mask & C_NOTRUNC))
         {
-          uintmax_t size = seek_records * output_blocksize + seek_bytes;
-          unsigned long int obs = output_blocksize;
+                input_file = infile;
+                output_file = outfile;
+                input_blocksize = output_blocksize = bs;
 
-          if (OFF_T_MAX / output_blocksize < seek_records)
-            die (EXIT_FAILURE, 0,
-                 _("offset too large: "
-                   "cannot truncate to a length of seek=%"PRIuMAX""
-                   " (%lu-byte) blocks"),
-                 seek_records, obs);
+                if (conversion_blocksize == 0)
+                        conversions_mask &= ~(C_BLOCK | C_UNBLOCK);
 
-          if (iftruncate (STDOUT_FILENO, size) != 0)
-            {
-              /* Complain only when ftruncate fails on a regular file, a
-                 directory, or a shared memory object, as POSIX 1003.1-2004
-                 specifies ftruncate's behavior only for these file types.
-                 For example, do not complain when Linux kernel 2.4 ftruncate
-                 fails on /dev/fd0.  */
-              int ftruncate_errno = errno;
-              struct stat stdout_stat;
-              if (fstat (STDOUT_FILENO, &stdout_stat) != 0)
-                die (EXIT_FAILURE, errno, _("cannot fstat %s"),
-                     quoteaf (output_file));
-              if (S_ISREG (stdout_stat.st_mode)
-                  || S_ISDIR (stdout_stat.st_mode)
-                  || S_TYPEISSHM (&stdout_stat))
-                die (EXIT_FAILURE, ftruncate_errno,
-                     _("failed to truncate to %"PRIuMAX" bytes"
-                       " in output file %s"),
-                     size, quoteaf (output_file));
-            }
+                if (input_flags & (O_DSYNC | O_SYNC))
+                        input_flags |= O_RSYNC;
+
+                if (output_flags & O_FULLBLOCK)
+                {
+                        error (0, 0, "%s: %s", _("invalid output flag"), quote ("fullblock"));
+                        usage (EXIT_FAILURE);
+                }
+
+                if (input_flags & O_SEEK_BYTES)
+                {
+                        error (0, 0, "%s: %s", _("invalid input flag"), quote ("seek_bytes"));
+                        usage (EXIT_FAILURE);
+                }
+
+                if (output_flags & (O_COUNT_BYTES | O_SKIP_BYTES))
+                {
+                        error (0, 0, "%s: %s", _("invalid output flag"),
+                                        quote (output_flags & O_COUNT_BYTES
+                                                ? "count_bytes" : "skip_bytes"));
+                        usage (EXIT_FAILURE);
+                }
+
+                if (input_flags & O_SKIP_BYTES && skip != 0)
+                {
+                        skip_records = skip / input_blocksize;
+                        skip_bytes = skip % input_blocksize;
+                }
+                else if (skip != 0)
+                        skip_records = skip;
+                else
+                        skip_records = 0;
+
+                if (input_flags & O_COUNT_BYTES && count != (uintmax_t) -1)
+                {
+                        max_records = count / input_blocksize;
+                        max_bytes = count % input_blocksize;
+                }
+                else if (count != (uintmax_t) -1)
+                        max_records = count;
+
+                if (output_flags & O_SEEK_BYTES && seek != 0)
+                {
+                        seek_records = seek / output_blocksize;
+                        seek_bytes = seek % output_blocksize;
+                }
+                else if (seek != 0)
+                        seek_records = seek;
+                else
+                        seek_records = 0;
+
+                /* Warn about partial reads if bs=SIZE is given and iflag=fullblock
+                   is not, and if counting or skipping bytes or using direct I/O.
+                   This helps to avoid confusion with miscounts, and to avoid issues
+                   with direct I/O on GNU/Linux.  */
+                warn_partial_read =
+                        (! (conversions_mask & C_TWOBUFS) && ! (input_flags & O_FULLBLOCK)
+                         && (skip_records
+                                 || (0 < max_records && max_records < (uintmax_t) -1)
+                                 || (input_flags | output_flags) & O_DIRECT));
+
+                iread_fnc = ((input_flags & O_FULLBLOCK)
+                                ? iread_fullblock
+                                : iread);
+                input_flags &= ~O_FULLBLOCK;
+
+                if (multiple_bits_set (conversions_mask & (C_ASCII | C_EBCDIC | C_IBM)))
+                        die (EXIT_FAILURE, 0, _("cannot combine any two of {ascii,ebcdic,ibm}"));
+                if (multiple_bits_set (conversions_mask & (C_BLOCK | C_UNBLOCK)))
+                        die (EXIT_FAILURE, 0, _("cannot combine block and unblock"));
+                if (multiple_bits_set (conversions_mask & (C_LCASE | C_UCASE)))
+                        die (EXIT_FAILURE, 0, _("cannot combine lcase and ucase"));
+                if (multiple_bits_set (conversions_mask & (C_EXCL | C_NOCREAT)))
+                        die (EXIT_FAILURE, 0, _("cannot combine excl and nocreat"));
+                if (multiple_bits_set (input_flags & (O_DIRECT | O_NOCACHE))
+                                || multiple_bits_set (output_flags & (O_DIRECT | O_NOCACHE)))
+                        die (EXIT_FAILURE, 0, _("cannot combine direct and nocache"));
+
+                if (input_flags & O_NOCACHE)
+                {
+                        i_nocache = true;
+                        i_nocache_eof = (max_records == 0 && max_bytes == 0);
+                        input_flags &= ~O_NOCACHE;
+                }
+                if (output_flags & O_NOCACHE)
+                {
+                        o_nocache = true;
+                        o_nocache_eof = (max_records == 0 && max_bytes == 0);
+                        output_flags &= ~O_NOCACHE;
+                }
         }
-    }
+        if (ifd_reopen (STDIN_FILENO, input_file, O_RDONLY | input_flags, 0) < 0)
+                die (EXIT_FAILURE, errno, _("failed to open %s"), quoteaf (input_file));
 
-  start_time = gethrxtime ();
-  next_time = start_time + XTIME_PRECISION;
+        offset = lseek (STDIN_FILENO, 0, SEEK_CUR);
+        input_seekable = (0 <= offset);
+        input_offset = MAX (0, offset);
+        input_seek_errno = errno;
 
-  exit_status = dd_copy ();
+        mode_t perms = MODE_RW_UGO;
+        int opts = (output_flags
+                        | (conversions_mask & C_NOCREAT ? 0 : O_CREAT)
+                        | (conversions_mask & C_EXCL ? O_EXCL : 0)
+                        | (seek_records || (conversions_mask & C_NOTRUNC) ? 0 : O_TRUNC));
 
-  if (max_records == 0 && max_bytes == 0)
-    {
-      /* Special case to invalidate cache to end of file.  */
-      if (i_nocache && !invalidate_cache (STDIN_FILENO, 0))
+        /* Open the output file with *read* access only if we might
+           need to read to satisfy a 'seek=' request.  If we can't read
+           the file, go ahead with write-only access; it might work.  */
+        if ((! seek_records
+                                || ifd_reopen (STDOUT_FILENO, output_file, O_RDWR | opts, perms) < 0)
+                        && (ifd_reopen (STDOUT_FILENO, output_file, O_WRONLY | opts, perms) < 0))
+                die (EXIT_FAILURE, errno, _("failed to open %s"), quoteaf (output_file));
+
+        if (seek_records != 0 && !(conversions_mask & C_NOTRUNC))
         {
-          error (0, errno, _("failed to discard cache for: %s"),
-                 quotef (input_file));
-          exit_status = EXIT_FAILURE;
-        }
-      if (o_nocache && !invalidate_cache (STDOUT_FILENO, 0))
-        {
-          error (0, errno, _("failed to discard cache for: %s"),
-                 quotef (output_file));
-          exit_status = EXIT_FAILURE;
-        }
-    }
-  else
-    {
-      /* Invalidate any pending region or to EOF if appropriate.  */
-      if (i_nocache || i_nocache_eof)
-        invalidate_cache (STDIN_FILENO, 0);
-      if (o_nocache || o_nocache_eof)
-        invalidate_cache (STDOUT_FILENO, 0);
-    }
+                uintmax_t size = seek_records * output_blocksize + seek_bytes;
+                unsigned long int obs = output_blocksize;
 
-  finish_up ();
-  return exit_status;
+                if (OFF_T_MAX / output_blocksize < seek_records)
+                        die (EXIT_FAILURE, 0, _("offset too large: "
+                                                "cannot truncate to a length of seek=%"PRIuMAX""
+                                                " (%lu-byte) blocks"), seek_records, obs);
+
+                if (iftruncate (STDOUT_FILENO, size) != 0)
+                {
+                        /* Complain only when ftruncate fails on a regular file, a
+                           directory, or a shared memory object, as POSIX 1003.1-2004
+                           specifies ftruncate's behavior only for these file types.
+                           For example, do not complain when Linux kernel 2.4 ftruncate
+                           fails on /dev/fd0.  */
+                        int ftruncate_errno = errno;
+                        struct stat stdout_stat;
+                        if (fstat (STDOUT_FILENO, &stdout_stat) != 0)
+                                die (EXIT_FAILURE, errno, _("cannot fstat %s"),
+                                                quoteaf (output_file));
+                        if (S_ISREG (stdout_stat.st_mode)
+                                        || S_ISDIR (stdout_stat.st_mode)
+                                        || S_TYPEISSHM (&stdout_stat))
+                                die (EXIT_FAILURE, ftruncate_errno,
+                                                _("failed to truncate to %"PRIuMAX" bytes"
+                                                        " in output file %s"),
+                                                size, quoteaf (output_file));
+                }
+        }
+
+
+        start_time = gethrxtime ();
+        next_time = start_time + XTIME_PRECISION;
+
+        exit_status = dd_copy ();
+
+        if (max_records == 0 && max_bytes == 0)
+        {
+                /* Special case to invalidate cache to end of file.  */
+                if (i_nocache && !invalidate_cache (STDIN_FILENO, 0))
+                {
+                        error (0, errno, _("failed to discard cache for: %s"),
+                                        quotef (input_file));
+                        exit_status = EXIT_FAILURE;
+                }
+                if (o_nocache && !invalidate_cache (STDOUT_FILENO, 0))
+                {
+                        error (0, errno, _("failed to discard cache for: %s"),
+                                        quotef (output_file));
+                        exit_status = EXIT_FAILURE;
+                }
+        }
+        else
+        {
+                /* Invalidate any pending region or to EOF if appropriate.  */
+                if (i_nocache || i_nocache_eof)
+                        invalidate_cache (STDIN_FILENO, 0);
+                if (o_nocache || o_nocache_eof)
+                        invalidate_cache (STDOUT_FILENO, 0);
+        }
+
+        finish_up ();
+
+        input_file = NULL;
+        output_file = NULL;
+        page_size = 0;
+        input_blocksize = 0;
+        output_blocksize = 0;
+        conversion_blocksize = 0;
+        skip_records = 0;
+        skip_bytes = 0;
+        seek_records = 0;
+        seek_bytes = 0;
+        max_bytes = 0;
+        conversions_mask = 0;
+        input_flags = 0;
+        output_flags = 0;
+        status_level = STATUS_DEFAULT;
+        translation_needed = false;
+        w_partial = 0;
+        w_full = 0;
+        r_partial = 0;
+        r_full = 0;
+        w_bytes = 0;
+        return exit_status;
 }
 
 #include <stdio.h>
@@ -2810,15 +2775,18 @@ void print_buffer(unsigned char *buffer, int size)
 {
         int i;
         for(i = 0; i < size; i++) {
-                if (i%16 == 0) fprintf(stdout, "\n");
+                if (i%16 == 0) fprintf(stderr, "\n");
                 printf("%02X ", buffer[i]);
         }
-        fprintf(stdout, "\n");
+        fprintf(stderr, "\n");
 }
 
 void test_usage(char* exec)
 {
-        fprintf(stdout, "%s -d /disk/path/name <-s sector_to_test>\n sector_to_test default is 0\n", exec);
+        fprintf(stderr, "%s -d /disk/path/name <-s sector_to_test>\n sector_to_test default is 0\n", exec);
+        fputs (HELP_OPTION_DESCRIPTION, stdout);
+        fputs (VERSION_OPTION_DESCRIPTION, stdout);
+        emit_ancillary_info (PROGRAM_NAME);
 }
 
 int main(int argc, char ** argv)
@@ -2832,6 +2800,13 @@ int main(int argc, char ** argv)
         int optchar = 0;
         static const char *optstring = "d:D:s:S:hH?";
         int test_sector = 0;
+        int read_fd = 0;
+        unsigned char* read_buffer = NULL;
+
+        set_program_name (argv[0]);
+        setlocale (LC_ALL, "");
+        bindtextdomain (PACKAGE, LOCALEDIR);
+        textdomain (PACKAGE);
 
         memset(disk_name, 0x00, sizeof(disk_name));
         optchar = getopt(argc, argv, optstring);
@@ -2862,27 +2837,27 @@ int main(int argc, char ** argv)
         /* step 1 get disk info */
         fd = open(disk_name, O_RDWR|O_SYNC|O_NONBLOCK);
         if (fd == -1) {
-                fprintf(stdout, "failed to open disk\n");
+                fprintf(stderr, "failed to open disk\n");
                 return 1;
         }
 
         rc = ioctl(fd, BLKSSZGET, &sector_size);
         if (rc != 0) {
-                fprintf(stdout, "failed to get sector size\n");
+                fprintf(stderr, "failed to get sector size\n");
                 close(fd);
                 return 1;
         }
 
         rc = ioctl(fd, BLKBSZGET, &physical_block_size);
         if (rc != 0) {
-                fprintf(stdout, "failed to get physical block size\n");
+                fprintf(stderr, "failed to get physical block size\n");
                 close(fd);
                 return 1;
         }
 
         rc = ioctl(fd, BLKGETSIZE, &sector_count);
         if (rc != 0) {
-                fprintf(stdout, "failed to get block count\n");
+                fprintf(stderr, "failed to get block count\n");
                 close(fd);
                 return 1;
         }
@@ -2893,14 +2868,13 @@ int main(int argc, char ** argv)
         fprintf(stdout, "sector size: %d\n", sector_size);
         fprintf(stdout, "physical block size: %d\n", physical_block_size);
         fprintf(stdout, "sector count: %d\n", sector_count);
-
         if (test_sector > sector_count) {
                 test_sector = sector_count;
         }
         unsigned char*write_buffer = NULL;
         write_buffer = calloc(1, sector_size);
         if (write_buffer == NULL) {
-                fprintf(stdout, "failed to allocate memory\n");
+                fprintf(stderr, "failed to allocate memory\n");
                 return 1;
         }
         int i;
@@ -2912,58 +2886,71 @@ int main(int argc, char ** argv)
         int fix_pattern_fd;
         fix_pattern_fd = open(DISK_FAKE_TEST_PATTERN, O_CREAT|O_RDWR|O_TRUNC, S_IRWXU);
         if (fix_pattern_fd == -1) {
-                fprintf(stdout, "can't create test pattern file\n");
+                fprintf(stderr, "can't create test pattern file\n");
                 return 1;
         }
         rc = write(fix_pattern_fd, write_buffer, sector_size);
         close(fix_pattern_fd);
 
-        /* sudo dd if=/tmp/fake-test-fix.bin of=/dev/sdd seek=10000 count=1 bs=512 */
-        /* sudo dd if=/dev/sdd of=/tmp/std.bin skip=10000 count=1 bs=512 */
+        /* just test one sector */
         /* step 3 read and save original data */
-        fprintf(stdout, "read original\n");
-        fflush(stdout);
-        org_main(disk_name, DISK_ORIGINAL_READ_DATA, test_sector, 0, sector_size);
+        /* fprintf(stderr, "read original\n"); */
+        rc = dd_main(disk_name, DISK_ORIGINAL_READ_DATA, test_sector, 0, sector_size);
+        if (rc != EXIT_SUCCESS) {
+                fprintf(stderr, "read original data from sector[%d] failed.\n", test_sector);
+                goto err;
+        }
 
         /* step 4 write fix pattern to disk */
-        fprintf(stdout, "write test data\n");
-        fflush(stdout);
-        org_main(DISK_FAKE_TEST_PATTERN, disk_name, 0, test_sector, sector_size);
+        /* fprintf(stderr, "write test data\n"); */
+        rc = dd_main(DISK_FAKE_TEST_PATTERN, disk_name, 0, test_sector, sector_size);
+        if (rc != EXIT_SUCCESS) {
+                fprintf(stderr, "write test data to sector[%d] failed.\n", test_sector);
+                goto err;
+        }
 
         /* step 5 read again and check */
-        fprintf(stdout, "read test data\n");
-        fflush(stdout);
-        org_main(disk_name, DISK_FAKE_TEST_READ, test_sector, 0, sector_size);
-        int read_fd = open(DISK_FAKE_TEST_READ, O_RDONLY);
-        if (read_fd == -1) {
-                fprintf(stdout, "can't read check file\n");
-                return 1;
+        /* fprintf(stderr, "read test data\n"); */
+        rc = dd_main(disk_name, DISK_FAKE_TEST_READ, test_sector, 0, sector_size);
+        if (rc != EXIT_SUCCESS) {
+                fprintf(stderr, "read test data from sector[%d] failed.\n", test_sector);
+                goto err;
         }
-        unsigned char* read_buffer;
+
+        read_fd = open(DISK_FAKE_TEST_READ, O_RDONLY);
+        if (read_fd == -1) {
+                fprintf(stderr, "can't read check file\n");
+                goto err;
+        }
         read_buffer = calloc(1, sector_size);
         if (read_buffer== NULL) {
-                fprintf(stdout, "failed to allocate memory\n");
-                return 1;
+                fprintf(stderr, "failed to allocate memory\n");
+                goto err;
         }
         rc = read(read_fd, read_buffer, sector_size);
         for (i = 0; i < sector_size; i++) {
                 if (*(read_buffer + i) != *(write_buffer + i)){
-                        fprintf(stdout, "error at %d 0x%x!=0x%x\n",
-                                        i,
+                        fprintf(stderr, "failed at sector[%d]+%d 0x%x!=0x%x\n",
+                                        test_sector, i,
                                         *(read_buffer + i),
                                         *(write_buffer + i));
-                        return 1;
+                        goto err;
                 }
         }
-        fprintf(stdout, "fake test pass\n");
-        fflush(stdout);
+        fprintf(stderr, "fake test at sector[%d]  pass\n", test_sector);
         close(read_fd);
 
         /* step 6 restore original data to disk */
-        org_main(DISK_ORIGINAL_READ_DATA, disk_name, 0, test_sector, sector_size);
+        dd_main(DISK_ORIGINAL_READ_DATA, disk_name, 0, test_sector, sector_size);
 
         free(write_buffer);
         free(read_buffer);
         unlink(DISK_FAKE_TEST_PATTERN);
+
         return 0;
+err:
+        if (write_buffer) free(write_buffer);
+        if (read_buffer) free(read_buffer);
+        return 1;
 }
+#endif
